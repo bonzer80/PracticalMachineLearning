@@ -1,0 +1,159 @@
+---
+title: "Practical Machine Learning Project"
+author: "AR"
+date: "February 13, 2016"
+output: html_document
+
+---
+
+Introduction
+============
+  
+Devices such as Jawbone Up, Nike Fuelband and Fitbit help us collect large amount of data without much expense.One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project we will be using data from accelerometers on the belt, forearm,arm and dumbell of six research particpiants. Using this data,
+we will predict how well they did their exercise. 
+
+Load and read the data
+======================
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+library(knitr)
+library(RColorBrewer)
+library(rattle)
+
+trainingUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testingUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainingFile <- "./data/pml-training.csv"
+testingFile  <- "./data/pml-testing.csv"
+
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+if (!file.exists(trainingFile)) {
+  download.file(trainingUrl, destfile=trainingFile, method="curl")
+}
+if (!file.exists(testingFile)) {
+  download.file(testingUrl, destfile=testingFile, method="curl")
+}
+
+
+```
+
+
+Having downloaded the data, we can now read the files into separate data frames.
+
+```{r}
+mytrain<- read.csv("./data/pml-training.csv")
+mytest <- read.csv("./data/pml-testing.csv")
+dim(mytrain)
+dim(mytest)
+```
+
+We can see that the training set consists of 19622 observations of 160 variables. The testing set contains 20 observations of 160 variables.
+
+Clean the data
+==============
+
+Let us clean the data by eliminating variables that are of no value as well as those observations that have missing values.
+
+```{r}
+sum(complete.cases(mytrain))
+mytrain <- mytrain[, colSums(is.na(mytrain)) == 0] 
+mytest <- mytest[, colSums(is.na(mytest)) == 0] 
+
+classe <- mytrain$classe
+trainRemove <- grepl("^X|timestamp|window", names(mytrain))
+mytrain <- mytrain[, !trainRemove]
+trainNew <- mytrain[, sapply(mytrain, is.numeric)]
+trainNew$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(mytest))
+mytest <- mytest[, !testRemove]
+testNew <- mytest[, sapply(mytest, is.numeric)]
+```
+
+After the cleansing, the training data set has 19622 observations of 53 variables and the testing data set has 20 observations of 53 variables.
+
+Split traning data
+==================
+
+Let us split the cleaned training set into a pure training data set (60%) and a validation data set (40%). The validation dats set will be used later.
+
+```{r}
+set.seed(12345) # This is to ensure reproducibility
+splitTrain <- createDataPartition(trainNew$classe, p=0.60, list=F)
+trainData1 <- trainNew[splitTrain, ]
+testData1 <- trainNew[-splitTrain, ]
+```
+
+Predictive Modeling
+===================
+  
+Random Forest:
+-------------
+  
+Random Forest algorithm automatically selects important variables. 
+
+```{r}
+set.seed(12345)
+ctrlRF <- trainControl(method="cv", 5)
+modelRF <- train(classe ~ ., data=trainData1, method="rf", trControl=ctrlRF, ntree=250)
+modelRF
+```
+
+We can now use the validation data set to validate the model.
+
+```{r}
+predictRF <- predict(modelRF, testData1)
+conMatrixRF<-confusionMatrix(testData1$classe, predictRF)
+conMatrixRF
+
+accuracy <- postResample(predictRF, testData1$classe)
+accuracy
+
+outofsample <- 1 - as.numeric(confusionMatrix(testData1$classe, predictRF)$overall[1])
+outofsample
+
+plot(conMatrixRF$table, col = conMatrixRF$byClass, main = paste("Random Forest Confusion Matrix: Accuracy =", round(conMatrixRF$overall['Accuracy'], 4)))
+```
+
+The Accuracy is 99.21 % and the Out of Sample error is 0.79%.
+
+Decision Tree:
+-------------
+
+```{r} 
+set.seed(12345) 
+modelDT <- rpart(classe ~ ., data=trainData1, method="class")
+fancyRpartPlot(modelDT, main='',sub='Decision Tree Plot' )
+
+predictDT <- predict(modelDT, testData1, type = "class")
+conMatrixDT<-confusionMatrix(predictDT, testData1$classe)
+conMatrixDT
+
+accuracy <- postResample(predictDT, testData1$classe)
+accuracy
+outofsample <- 1 - as.numeric(confusionMatrix(testData1$classe, predictDT)$overall[1])
+outofsample
+
+plot(conMatrixDT$table, col = conMatrixDT$byClass, main = paste("Decision Tree Confusion Matrix: Accuracy =", round(conMatrixDT$overall['Accuracy'], 4)))
+```
+
+The Accuracy is 72.68 % and the Out of Sample error is 27.32 %
+
+Results
+=======
+  Between the two models, the Random Forest model with an accuracy of 99.21% is better than the Decision Tree model that had an accuracy of 72.68%. We will use the Random Forst model to run predictions on the original test data set. The results are below.
+  
+```{r}
+result <- predict(modelRF, testNew[, -length(names(testNew))])
+result
+```
+
+
+
+
+
+
